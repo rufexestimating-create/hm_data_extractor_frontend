@@ -14,6 +14,18 @@ function AuthConfirmContent() {
   useEffect(() => {
     const token_hash = params.get("token_hash");
     const type = params.get("type") as "signup" | "recovery" | "email" | null;
+    const code = params.get("code");
+
+    if (code) {
+      supabase.auth.exchangeCodeForSession(code).then(({ error: err }) => {
+        if (err) {
+          setError(err.message.includes("expired") ? "This link has expired. Please request a new one." : err.message);
+          return;
+        }
+        router.replace("/");
+      });
+      return;
+    }
 
     if (!token_hash || !type) {
       setError("Invalid or expired link. Please try again.");
