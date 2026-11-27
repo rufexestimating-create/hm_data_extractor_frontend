@@ -73,6 +73,26 @@ function Dashboard({ user, onSignOut }: { user: User; onSignOut: () => void }) {
   }, []);
 
   // ── Extraction ──
+  const attachStream = useCallback(async () => {
+    const es = new EventSource(`${API}/api/stream?access_token=${encodeURIComponent(await getToken())}`);
+    esRef.current = es;
+    es.addEventListener("update", (e) => {
+      const d = JSON.parse(e.data);
+      setProgress(d.progress || 0); setStatus(d.status as Status); setResultCount(d.result_count || 0);
+      if (d.stats) setStats(d.stats);
+      if (d.logs?.length) setLogs((p) => [...p, ...d.logs]);
+    });
+    es.addEventListener("complete", (e) => {
+      const d = JSON.parse(e.data);
+      setProgress(d.status === "done" ? 100 : d.progress); setStatus(d.status as Status);
+      setResultCount(d.result_count || 0); if (d.stats) setStats(d.stats);
+      if (d.batch_id) setDmBatchId(d.batch_id);
+      es.close(); esRef.current = null;
+    });
+    es.addEventListener("status", (e) => { const d = JSON.parse(e.data); if (d.status === "idle") { es.close(); esRef.current = null; } });
+    es.onerror = () => { es.close(); esRef.current = null; setStatus((p) => p === "running" ? "error" : p); };
+  }, []);
+
   const startExtraction = useCallback(async () => {
     if (!url.trim() || !url.startsWith("http")) return;
     setStatus("running"); setProgress(0); setLogs([]); setResultCount(0); setStats({});
@@ -87,27 +107,28 @@ function Dashboard({ user, onSignOut }: { user: User; onSignOut: () => void }) {
         setStatus("error");
         return;
       }
-      const es = new EventSource(`${API}/api/stream?access_token=${encodeURIComponent(await getToken())}`);
-      esRef.current = es;
-      es.addEventListener("update", (e) => {
-        const d = JSON.parse(e.data);
-        setProgress(d.progress || 0); setStatus(d.status as Status); setResultCount(d.result_count || 0);
-        if (d.stats) setStats(d.stats);
-        if (d.logs?.length) setLogs((p) => [...p, ...d.logs]);
-      });
-      es.addEventListener("complete", (e) => {
-        const d = JSON.parse(e.data);
-        setProgress(d.status === "done" ? 100 : d.progress); setStatus(d.status as Status);
-        setResultCount(d.result_count || 0); if (d.stats) setStats(d.stats);
-        if (d.batch_id) setDmBatchId(d.batch_id);
-        es.close(); esRef.current = null;
-      });
-      es.addEventListener("status", (e) => { const d = JSON.parse(e.data); if (d.status === "idle") { es.close(); esRef.current = null; } });
-      es.onerror = () => { es.close(); esRef.current = null; setStatus((p) => p === "running" ? "error" : p); };
+      await attachStream();
     } catch { setStatus("error"); }
-  }, [url, mode, pages]);
+  }, [url, mode, pages, attachStream]);
 
   const stopExtraction = async () => { try { await apiFetch("/api/stop", { method: "POST" }); } catch {} };
+
+  // Resume tracking a job that's still running on the backend after a page reload/navigation,
+  // so the UI doesn't fall out of sync and block the user from starting or stopping it.
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await apiFetch("/api/status");
+        if (!r.ok) return;
+        const d = await r.json();
+        if (d.status === "running") {
+          setStatus("running"); setProgress(d.progress || 0); setResultCount(d.result_count || 0);
+          if (d.stats) setStats(d.stats);
+          await attachStream();
+        }
+      } catch {}
+    })();
+  }, [attachStream]);
 
   // ── Batches ──
   const fetchBatches = useCallback(async () => {
