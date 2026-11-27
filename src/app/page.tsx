@@ -19,6 +19,19 @@ interface Stats { total?: number; with_website?: number; with_email?: number; wi
 interface Batch { batch_id: string; source_url: string; mode: string; created_at: string; count: number; }
 interface DataRecord { id: number; name: string; website: string; emails: string; phone: string; state: string; mode: string; created_at: string; }
 
+// "All" -> no limit · "8" -> pages 1-8 · "4-8" -> pages 4-8
+function parsePageRange(input: string): { start_page: number | null; max_pages: number | null } {
+  const v = input.trim().toLowerCase();
+  if (v === "" || v === "all") return { start_page: null, max_pages: null };
+  if (v.includes("-")) {
+    const [a, b] = v.split("-", 2);
+    const start = parseInt(a) || 1;
+    const end = parseInt(b) || null;
+    return { start_page: start, max_pages: end };
+  }
+  return { start_page: null, max_pages: parseInt(v) || null };
+}
+
 export default function Home() {
   const { user, loading, signOut } = useRequireAuth();
   if (loading || !user) {
@@ -97,9 +110,10 @@ function Dashboard({ user, onSignOut }: { user: User; onSignOut: () => void }) {
     if (!url.trim() || !url.startsWith("http")) return;
     setStatus("running"); setProgress(0); setLogs([]); setResultCount(0); setStats({});
     try {
+      const { start_page, max_pages } = parsePageRange(pages);
       const res = await apiFetch("/api/extract", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim(), fast: mode === "fast", max_pages: pages.toLowerCase() === "all" ? null : parseInt(pages) || null }),
+        body: JSON.stringify({ url: url.trim(), fast: mode === "fast", max_pages, start_page }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -336,13 +350,14 @@ function Dashboard({ user, onSignOut }: { user: User; onSignOut: () => void }) {
                     <div className="flex items-center gap-0.5 mt-0.5">
                       <input
                         type="text" value={pages}
+                        title='e.g. "8" for pages 1-8, or "4-8" for pages 4 to 8'
                         onChange={(e) => {
                           const v = e.target.value;
-                          if (v === "" || /^\d+$/.test(v) || v.toLowerCase() === "all") setPages(v);
+                          if (v === "" || /^\d{0,4}-?\d{0,4}$/.test(v) || v.toLowerCase() === "all") setPages(v);
                         }}
                         onFocus={() => setPagesOpen(true)}
                         disabled={isRunning}
-                        className="w-10 bg-transparent text-center text-sm text-text font-semibold outline-none
+                        className="w-14 bg-transparent text-center text-sm text-text font-semibold outline-none
                                    disabled:opacity-40"
                       />
                       <button
