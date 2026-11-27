@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, XCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { AuthLayout } from "@/components/AuthLayout";
 
-export default function AuthConfirmPage() {
+function AuthConfirmContent() {
   const router = useRouter();
   const params = useSearchParams();
   const [error, setError] = useState("");
@@ -66,5 +66,13 @@ export default function AuthConfirmPage() {
         <p className="text-xs text-text-muted">Confirming your email…</p>
       </div>
     </AuthLayout>
+  );
+}
+
+export default function AuthConfirmPage() {
+  return (
+    <Suspense>
+      <AuthConfirmContent />
+    </Suspense>
   );
 }
